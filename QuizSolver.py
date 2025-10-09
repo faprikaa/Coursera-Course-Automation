@@ -2,6 +2,8 @@ import json
 import random
 import time
 
+from selenium.common import ElementClickInterceptedException
+from selenium.webdriver import ActionChains, Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -35,16 +37,25 @@ class QuizSolver:
         self.client = client
         self.model = model
 
-    def solve_quiz(self, quiz_url):
-        self.driver.get(quiz_url)
-
+    def solve_quiz(self, quiz_link):
+        self.driver.get(quiz_link)
         start_button = WebDriverWait(self.driver, 30).until(
             EC.visibility_of_element_located((By.XPATH,
                                               '//*[@id="main-container"]/div[1]/div/div/div/div/div/div/div/div[2]/div[2]/div[2]/div[2]/div/div/div/button'))
         )
-        start_button.click()
+        try:
+            start_button.click()
+        except ElementClickInterceptedException as  e:
+            self.try_close_dialog()
+            ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+            start_button.click()
 
-        questions = WebDriverWait(self.driver, 10).until(
+
+        confirm_new_attempt_button = self.driver.find_elements(By.CSS_SELECTOR, 'button[data-testid="StartAttemptModal__primary-button"]')
+        if confirm_new_attempt_button:
+            confirm_new_attempt_button[0].click()
+
+        questions = WebDriverWait(self.driver, 30).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div[data-testid="part-Submission_MultipleChoiceQuestion"]'))
         )
         qas = []
@@ -69,6 +80,7 @@ class QuizSolver:
             except Exception as e:
                 print(e)
                 input("Press Enter to continue...")
+            time.sleep(random.randint(1, 5))
 
         agreement_checkbox = self.driver.find_element(By.ID, 'agreement-checkbox-base')
         if not agreement_checkbox.is_selected(): # Check if not already selected
@@ -90,11 +102,27 @@ class QuizSolver:
         )
         dialog_submit_button.click()
 
-        grade_parent = WebDriverWait(self.driver, 15).until(
+        grade_parent = WebDriverWait(self.driver, 60).until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'div[data-testid="AssignmentViewTopBanner"]'))
         )
         grade = grade_parent.find_element(By.TAG_NAME, "span").text
-        print(grade)
+        print(f"Quiz completed with grade: {grade}")
+
+        next_item_button = WebDriverWait(self.driver, 15).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, 'a[data-testid="TopBannerCTAButton"]'))
+        )
+        try:
+            next_item_button.click()
+        except ElementClickInterceptedException:
+            close_dialog_btn = self.driver.find_elements(By.XPATH, '//*[@id="cds-react-aria4856666153-:rh:"]/div[3]/div/div/div[1]/button')
+            if close_dialog_btn:
+                close_dialog_btn[0].click()
+                time.sleep(1)
+            ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+            next_item_button.click()
+
+
+
 
 
     def ask_ai(self, prompt, max_retries=3):
@@ -118,4 +146,10 @@ class QuizSolver:
                     raise  # re-raise after final failure
                 time.sleep(2)  # wait a bit before retrying
 
+    def try_close_dialog(self):
+        time.sleep(random.randint(2, 5))
+        honor_code_dialog = self.driver.find_elements(By.XPATH, '//*[@id="cds-react-aria7791273047-:r19:"]/div[3]/div/div/div[2]/div[3]/div/button')
+        if honor_code_dialog:
+            honor_code_dialog[0].click()
+            time.sleep(1)
 
